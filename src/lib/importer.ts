@@ -1,11 +1,4 @@
 import JSZip from 'jszip';
-import { convertCbz } from '../convert/cbz';
-import { convertDocx } from '../convert/docx';
-import { convertFb2 } from '../convert/fb2';
-import { convertHtml } from '../convert/html';
-import { convertMarkdown } from '../convert/markdown';
-import { convertPdf } from '../convert/pdf';
-import { convertText } from '../convert/text';
 import { getBook, saveBook } from './db';
 import { EpubBook } from './epub';
 import type { BookRecord } from './types';
@@ -119,25 +112,26 @@ export async function importFile(file: File, ctx: ConvertContext): Promise<Impor
     let result: ConvertResult;
     switch (format) {
       case 'pdf':
-        result = await convertPdf(bytes, fallbackTitle, inner);
+        // Converters load on demand: pdf.js and mammoth are large, and the app must start without them.
+        result = await (await import('../convert/pdf')).convertPdf(bytes, fallbackTitle, inner);
         break;
       case 'docx':
-        result = await convertDocx(buffer, fallbackTitle, inner);
+        result = await (await import('../convert/docx')).convertDocx(buffer, fallbackTitle, inner);
         break;
       case 'md':
-        result = await convertMarkdown(bytes, fallbackTitle, inner);
+        result = await (await import('../convert/markdown')).convertMarkdown(bytes, fallbackTitle, inner);
         break;
       case 'html':
-        result = await convertHtml(bytes, fallbackTitle, inner);
+        result = await (await import('../convert/html')).convertHtml(bytes, fallbackTitle, inner);
         break;
       case 'fb2':
-        result = await convertFb2(bytes, fallbackTitle, inner);
+        result = await (await import('../convert/fb2')).convertFb2(bytes, fallbackTitle, inner);
         break;
       case 'cbz':
-        result = await convertCbz(bytes, fallbackTitle, inner);
+        result = await (await import('../convert/cbz')).convertCbz(bytes, fallbackTitle, inner);
         break;
       default:
-        result = await convertText(bytes, fallbackTitle, inner);
+        result = await (await import('../convert/text')).convertText(bytes, fallbackTitle, inner);
     }
     epub = result.epub;
     warnings = result.warnings;
