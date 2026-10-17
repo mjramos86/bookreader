@@ -7,9 +7,46 @@
     <meta name="description" content="Read EPUB, PDF, DOCX, TXT, Markdown, HTML, FB2 and CBZ books in your browser. PDFs are converted to reflowable EPUB." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b45f06'/%3E%3Cpath d='M8 7h8a3 3 0 0 1 3 3v15a3 3 0 0 0-3-3H8zM24 7h-5v15h5z' fill='%23fff8ec'/%3E%3C/svg%3E" />
     <title>Bookreader</title>
+    <style>
+      /* Shown before (or instead of) the app, so a failed start is never a blank screen. */
+      html, body { margin: 0; background: #ffffff; color: #1d1d1f; font: 16px/1.5 system-ui, sans-serif; }
+      @media (prefers-color-scheme: dark) { html, body { background: #1f2023; color: #d6d6d4; } }
+      #boot { max-width: 560px; margin: 12vh auto; padding: 0 20px; }
+      #boot h1 { font-size: 22px; margin: 0 0 8px; }
+      #boot code { background: rgba(128, 128, 128, 0.2); padding: 1px 6px; border-radius: 4px; }
+      #boot pre { white-space: pre-wrap; background: rgba(128, 128, 128, 0.15); padding: 10px; border-radius: 8px; font-size: 13px; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot">
+        <h1>Bookreader</h1>
+        <p id="boot-msg">Loading…</p>
+        <noscript><p>This app needs JavaScript. Please enable it and reload.</p></noscript>
+      </div>
+    </div>
+    <script>
+      // Plain (non-module) script: it still runs when the module bundle cannot load.
+      (function () {
+        var msg = document.getElementById('boot-msg');
+        if (location.protocol === 'file:') {
+          msg.innerHTML = 'This page was opened as a file, and browsers do not run web apps that way. ' +
+            'Serve the folder over http instead, for example run <code>npm run preview</code> (or <code>npx vite preview</code>) ' +
+            'in the project and open the address it prints.';
+          return;
+        }
+        window.addEventListener('error', function (e) {
+          if (document.getElementById('boot-msg')) {
+            msg.innerHTML = 'Bookreader could not start.<pre></pre>';
+            msg.querySelector('pre').textContent = String(e.message || e.error || 'Unknown error') + (e.filename ? '\n' + e.filename : '');
+          }
+        }, true);
+        setTimeout(function () {
+          var m = document.getElementById('boot-msg');
+          if (m && m.textContent === 'Loading…') m.textContent = 'Still loading… if this stays, your browser may be too old or the files failed to load (check the browser console).';
+        }, 8000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
