@@ -1,6 +1,6 @@
 // The legacy build carries polyfills, so conversion also works in browsers a few versions old.
+import '../lib/polyfills';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
-import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist/types/src/display/api';
 import type { TocNode } from '../lib/epubWriter';
 import { buildEpub } from '../lib/epubWriter';
@@ -17,7 +17,8 @@ import {
   type RawFigure,
 } from './pdfLayout';
 
-pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+// Our own worker entry adds the polyfills that pdf.js needs in Safari before loading pdf.js's worker.
+pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL('./pdfWorker.ts', import.meta.url), { type: 'module' });
 
 const ASSET_BASE = () => new URL(`${import.meta.env.BASE_URL}pdfjs/`, document.baseURI).href;
 
