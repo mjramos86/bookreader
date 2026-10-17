@@ -1,0 +1,36 @@
+{
+  "name": "bookreader",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "In-browser e-book reader. Converts PDF, DOCX, TXT, Markdown, HTML, FB2 and CBZ into EPUB and reads it with Kindle-style controls.",
+  "scripts": {
+    "postinstall": "node scripts/copy-pdfjs-assets.mjs",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource/atkinson-hyperlegible": "^5.3.0",
+    "@fontsource/literata": "^5.3.0",
+    "@fontsource/opendyslexic": "^5.3.0",
+    "jszip": "^3.10.2",
+    "mammoth": "^1.13.0",
+    "marked": "^18.1.1",
+    "pdfjs-dist": "^6.4.299",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^29.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}
