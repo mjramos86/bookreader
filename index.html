@@ -35,12 +35,22 @@
             'in the project and open the address it prints.';
           return;
         }
+        function show(text) {
+          var m = document.getElementById('boot-msg');
+          if (!m) return; // the app has started
+          m.innerHTML = 'Bookreader could not start.<pre></pre>';
+          m.querySelector('pre').textContent = text;
+        }
+        // Capture phase also catches files that fail to load (scripts, styles), which have no message.
         window.addEventListener('error', function (e) {
-          if (document.getElementById('boot-msg')) {
-            msg.innerHTML = 'Bookreader could not start.<pre></pre>';
-            msg.querySelector('pre').textContent = String(e.message || e.error || 'Unknown error') + (e.filename ? '\n' + e.filename : '');
-          }
+          var t = e.target;
+          if (t && t !== window && (t.src || t.href)) show('Failed to load: ' + (t.src || t.href));
+          else show((e.message || 'Error') + (e.filename ? '\n' + e.filename + ':' + e.lineno : '') + (e.error && e.error.stack ? '\n' + e.error.stack : ''));
         }, true);
+        window.addEventListener('unhandledrejection', function (e) {
+          show('Unhandled error: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason));
+        });
+        navigator.userAgent && (document.getElementById('boot-msg').setAttribute('data-ua', navigator.userAgent));
         setTimeout(function () {
           var m = document.getElementById('boot-msg');
           if (m && m.textContent === 'Loading…') m.textContent = 'Still loading… if this stays, your browser may be too old or the files failed to load (check the browser console).';
