@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { deleteBook, getBookFile, listBooks, requestPersistence } from '../lib/db';
 import { useObjectUrl } from '../lib/hooks';
-import { ACCEPT_ATTR, ACCEPTED_EXTENSIONS } from '../lib/importer';
+import { ACCEPT_ATTR } from '../lib/importer';
 import type { Settings } from '../lib/settings';
 import type { BookRecord } from '../lib/types';
 import { useImporter } from '../lib/useImporter';
@@ -230,7 +230,7 @@ export function Library({ settings, updateSettings, onOpen }: Props) {
             <button className="btn primary large" onClick={() => fileInput.current?.click()}>
               <Icon name="plus" size={20} /> Choose books
             </button>
-            <p className="formats">{ACCEPTED_EXTENSIONS.map((e) => e.slice(1).toUpperCase()).join(' · ')}</p>
+            <p className="formats">EPUB · PDF · DOCX · TXT · Markdown · HTML · FB2 · CBZ</p>
             <p className="privacy">Everything stays in your browser. Nothing is uploaded.</p>
           </section>
         ) : (

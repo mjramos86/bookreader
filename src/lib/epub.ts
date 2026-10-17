@@ -199,7 +199,7 @@ export class EpubBook {
       }
     }
 
-    await this.parseToc(opf, spineEl);
+    await this.parseToc(spineEl);
     this.chapterText = new Array(this.spine.length).fill('');
   }
 
@@ -231,7 +231,7 @@ export class EpubBook {
     }
   }
 
-  private async parseToc(opf: Document, spineEl: Element | undefined): Promise<void> {
+  private async parseToc(spineEl: Element | undefined): Promise<void> {
     const navItem = Array.from(this.manifest.values()).find((m) => m.properties.includes('nav'));
     if (navItem) {
       const doc = await this.readXml(navItem.path, 'application/xhtml+xml');
@@ -255,7 +255,6 @@ export class EpubBook {
         if (navMap) this.toc = this.tocFromNcx(navMap, ncxItem.path);
       }
     }
-    void opf;
   }
 
   private mapHref(basePath: string, href: string | null): { spine: number; fragment?: string } | null {

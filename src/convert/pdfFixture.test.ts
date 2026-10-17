@@ -32,7 +32,7 @@ describe('sample.pdf', () => {
       expect.arrayContaining(['The Northern Charts', 'Chapter 1: Fog', 'Chapter 2: Harbours', 'Chapter 3: The Bell Buoy', 'A closer look', 'Two-column interlude']),
     );
 
-    const plan = planChapters(analysis.blocks, [], 'The Northern Charts', pages.length);
+    const plan = planChapters(analysis.blocks, [], 'The Northern Charts');
     expect(plan.map((c) => c.title)).toEqual(['The Northern Charts', 'Chapter 1: Fog', 'Chapter 2: Harbours', 'Chapter 3: The Bell Buoy']);
 
     const emphasis = analysis.blocks.find((b) => b.text.startsWith('Things to remember'));

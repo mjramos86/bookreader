@@ -72,16 +72,20 @@ export async function convertText(bytes: Uint8Array, fallbackTitle: string, ctx:
   const paras = toParagraphs(body.replace(/\t/g, '    '));
   ctx.progress(0.4, 'Finding chapters');
 
-  const chapters: { title: string; paras: Para[] }[] = [];
-  let current: { title: string; paras: Para[] } = { title: bookTitle, paras: [] };
+  interface Chapter {
+    title: string;
+    paras: Para[];
+    /** The first paragraph is the chapter's own heading line. */
+    heading: boolean;
+  }
+  const chapters: Chapter[] = [];
+  let current: Chapter = { title: bookTitle, paras: [], heading: false };
   const headingCount = paras.filter((p) => !p.verse && isHeadingLine(p.text)).length;
   const useHeadings = headingCount >= 2;
   for (const p of paras) {
     if (useHeadings && !p.verse && isHeadingLine(p.text)) {
       if (current.paras.length) chapters.push(current);
-      current = { title: p.text.trim(), paras: [] };
-      current.paras.push({ text: p.text.trim(), verse: false });
-      (current as { isHeading?: boolean }).isHeading = true;
+      current = { title: p.text.trim(), paras: [{ text: p.text.trim(), verse: false }], heading: true };
     } else current.paras.push(p);
   }
   if (current.paras.length) chapters.push(current);
@@ -89,7 +93,7 @@ export async function convertText(bytes: Uint8Array, fallbackTitle: string, ctx:
   // Chunk anything oversized (or an unstructured file) into readable parts.
   const drafts: ChapterDraft[] = [];
   for (const ch of chapters) {
-    const hasHeading = (ch as { isHeading?: boolean }).isHeading;
+    const hasHeading = ch.heading;
     const parts: Para[][] = [];
     let cur: Para[] = [];
     let size = 0;

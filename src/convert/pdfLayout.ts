@@ -195,15 +195,29 @@ interface Cluster {
   items: RawItem[];
 }
 
+/**
+ * Whether two items belong on the same visual line: their baselines coincide, or one is a
+ * superscript/subscript sitting beside the other. A large item in a neighbouring column must not
+ * swallow lines of a different column, so looser matches also require horizontal adjacency.
+ */
+function sameLine(a: RawItem, b: RawItem): boolean {
+  const dy = Math.abs(a.y - b.y);
+  const small = Math.min(a.size, b.size);
+  const large = Math.max(a.size, b.size);
+  if (dy <= 0.25 * small) return true;
+  if (dy > 0.55 * large) return false;
+  const gap = Math.max(a.x - (b.x + b.width), b.x - (a.x + a.width));
+  return gap < 1.2 * large;
+}
+
 function clusterItems(items: RawItem[]): Cluster[] {
   const sorted = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
   const clusters: Cluster[] = [];
   for (const it of sorted) {
     let target: Cluster | undefined;
-    for (let i = clusters.length - 1; i >= 0 && i >= clusters.length - 3; i--) {
-      const c = clusters[i];
-      if (Math.abs(it.y - c.y) <= 0.5 * Math.max(it.size, c.size)) {
-        target = c;
+    for (let i = clusters.length - 1; i >= 0 && i >= clusters.length - 4; i--) {
+      if (clusters[i].items.some((j) => sameLine(it, j))) {
+        target = clusters[i];
         break;
       }
     }
@@ -234,21 +248,32 @@ function clusterExtent(c: Cluster): { x0: number; x1: number } {
   return { x0, x1 };
 }
 
-/** Finds a vertical gap that separates two text columns, if the page has one. */
+/** Median width of the text lines made of the given items. */
+function medianLineWidth(items: RawItem[]): number {
+  return median(
+    clusterItems(items).map((c) => {
+      const e = clusterExtent(c);
+      return e.x1 - e.x0;
+    }),
+  );
+}
+
+/**
+ * Finds a vertical strip that separates two columns of running text, if the page has one. Works on
+ * item geometry alone, so columns whose baselines are offset from each other still count.
+ */
 export function detectGutter(clusters: Cluster[], pageWidth: number): Gutter | null {
-  const lines = clusters.filter((c) => c.items.some((i) => i.str.trim().length > 0));
-  if (lines.length < 8) return null;
+  const items = clusters.flatMap((c) => c.items.filter((i) => i.str.trim().length > 0));
+  if (items.length < 8) return null;
   const cover = new Int32Array(Math.ceil(pageWidth) + 2);
-  for (const c of lines) {
-    for (const it of c.items) {
-      const a = Math.max(0, Math.floor(it.x));
-      const b = Math.min(cover.length - 1, Math.ceil(it.x + it.width));
-      for (let x = a; x <= b; x++) cover[x]++;
-    }
+  for (const it of items) {
+    const a = Math.max(0, Math.floor(it.x));
+    const b = Math.min(cover.length - 1, Math.ceil(it.x + it.width));
+    for (let x = a; x <= b; x++) cover[x]++;
   }
   const lo = Math.floor(pageWidth * 0.25);
   const hi = Math.ceil(pageWidth * 0.75);
-  const limit = Math.max(1, Math.floor(lines.length * 0.1));
+  const limit = Math.max(1, Math.floor(items.length * 0.06));
   let best: { s: number; e: number } | null = null;
   let runStart = -1;
   for (let x = lo; x <= hi + 1; x++) {
@@ -260,20 +285,17 @@ export function detectGutter(clusters: Cluster[], pageWidth: number): Gutter | n
     }
   }
   if (!best || best.e - best.s < 9) return null;
-  const mid = (best.s + best.e) / 2;
-  let both = 0;
-  let left = 0;
-  let right = 0;
-  for (const c of lines) {
-    const hasL = c.items.some((i) => i.x + i.width <= best!.s + 3);
-    const hasR = c.items.some((i) => i.x >= best!.e - 3);
-    if (hasL && hasR) both++;
-    if (hasL) left++;
-    if (hasR) right++;
-  }
-  // Both columns must hold real text; a lone table row with a wide gap is not a column layout.
-  if (left < 5 || right < 5 || both < Math.min(left, right) * 0.35) return null;
-  return { start: best.s, end: best.e, mid };
+  const start = best.s;
+  const end = best.e;
+  const left = items.filter((i) => i.x + i.width <= start + 3);
+  const right = items.filter((i) => i.x >= end - 3);
+  if (left.length < 5 || right.length < 5 || left.length < items.length * 0.2 || right.length < items.length * 0.2) return null;
+
+  // Both sides must hold running text (lines a good part of the page wide); a table whose narrow
+  // cells leave an empty strip between them does not.
+  const minLine = pageWidth * 0.25;
+  if (medianLineWidth(left) < minLine || medianLineWidth(right) < minLine) return null;
+  return { start, end, mid: (start + end) / 2 };
 }
 
 function itemRuns(items: RawItem[], lineSize: number, lineY: number): { runs: Run[]; wideGap: boolean } {
@@ -289,7 +311,7 @@ function itemRuns(items: RawItem[], lineSize: number, lineY: number): { runs: Ru
       const prevEndsSpace = /\s$/.test(prev.str);
       const startsSpace = /^\s/.test(raw);
       const em = Math.max(it.size, prev.size);
-      if (gap > 3 * em && gap > 24) {
+      if (gap > 2.2 * em && gap > 18) {
         wideGap = true;
         if (!prevEndsSpace) text = '\u2003' + text;
       } else if (!prevEndsSpace && !startsSpace && gap > 0.16 * em) {
@@ -871,7 +893,7 @@ export function analyze(rawPages: RawPage[], options: AnalyzeOptions = {}): Anal
   }
 
   const merged = mergeAcrossRegions(blocks);
-  const headingSizes = assignHeadingLevels(merged, bodySize, rawPages.length, options.boldHeadings !== false);
+  const headingSizes = assignHeadingLevels(merged, rawPages.length, options.boldHeadings !== false);
   return { blocks: merged, bodySize, headingSizes };
 }
 
@@ -909,6 +931,8 @@ function shouldBreak(a: Line, b: Line, ctx: BreakContext): boolean {
     }
     if (indent > 0.9 * ctx.bodySize && indent < 8 * ctx.bodySize && endsSentence(a.text)) return true;
     if (a.x1 < m.right - 0.22 * width && endsSentence(a.text)) return true;
+    // A very short line in the middle of text is the end of a paragraph or list item, not a wrapped line.
+    if (a.x1 < m.right - 0.4 * width && !/-$/.test(a.text)) return true;
   } else if (endsSentence(a.text) && gap > 1.25 * lineGap) {
     return true;
   }
@@ -956,7 +980,7 @@ function mergeAcrossRegions(blocks: Block[]): Block[] {
   return out;
 }
 
-function assignHeadingLevels(blocks: Block[], bodySize: number, pageCount: number, boldHeadings: boolean): number[] {
+function assignHeadingLevels(blocks: Block[], pageCount: number, boldHeadings: boolean): number[] {
   // Bold paragraphs standing alone, at about body size, are sub-headings.
   if (boldHeadings) {
     for (const b of blocks) {
@@ -983,7 +1007,6 @@ function assignHeadingLevels(blocks: Block[], bodySize: number, pageCount: numbe
       b.level = Math.min(4, (idx < 0 ? levelSizes.length : idx) + 1);
     }
   }
-  void bodySize;
   return levelSizes;
 }
 
@@ -1032,7 +1055,7 @@ function blockOf(blocks: Block[], page: number, y: number | undefined): number {
   return blocks.length;
 }
 
-export function planChapters(blocks: Block[], outline: OutlineEntry[], bookTitle: string, pageCount: number): ChapterPlan[] {
+export function planChapters(blocks: Block[], outline: OutlineEntry[], bookTitle: string): ChapterPlan[] {
   if (!blocks.length) return [];
   const text = (from: number, to: number) => blocks.slice(from, to).reduce((n, b) => n + b.text.length, 0);
 
@@ -1103,7 +1126,6 @@ export function planChapters(blocks: Block[], outline: OutlineEntry[], bookTitle
       const last = blocks[p.end - 1].page + 1;
       p.title = `Part ${n + 1} (pages ${first}–${last})`;
     });
-    void pageCount;
     return plan;
   }
 

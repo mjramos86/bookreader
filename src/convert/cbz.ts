@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import type { ConvertContext, ConvertResult } from '../lib/importer';
 import { buildEpub, type TocNode } from '../lib/epubWriter';
-import { escapeXml, extOf, ImportError, mimeFromPath, uid } from '../lib/util';
+import { extOf, ImportError, mimeFromPath, uid } from '../lib/util';
 
 const naturalCompare = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }).compare;
 
@@ -56,6 +56,5 @@ export async function convertCbz(bytes: Uint8Array, fallbackTitle: string, ctx: 
     toc,
     css: `body{margin:0}.pageimg{text-align:center}.pageimg img{max-width:100%;max-height:98vh;width:auto;height:auto}`,
   });
-  void escapeXml;
   return { epub, warnings: [] };
 }

@@ -61,7 +61,7 @@ export function useImporter(onImported: (book: BookRecord) => void) {
           if ((err as { name?: string })?.name === 'AbortError') patch(next, { status: 'cancelled', message: 'Cancelled' });
           else {
             const message = err instanceof ImportError ? err.message : `Could not import this file. ${err instanceof Error ? err.message : ''}`.trim();
-            console.error(err);
+            if (!(err instanceof ImportError)) console.error(err);
             patch(next, { status: 'error', error: message, message: 'Failed' });
           }
         } finally {

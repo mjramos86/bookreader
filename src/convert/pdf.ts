@@ -11,7 +11,6 @@ import { extractPage, mergeRects, type ExtractedPage, type FontFlags, type Rect 
 import {
   analyze,
   blocksToXhtml,
-  normTitle,
   planChapters,
   titleMatchesHeading,
   type OutlineEntry,
@@ -164,10 +163,6 @@ export async function convertPdf(bytes: Uint8Array, fallbackTitle: string, ctx: 
         }
 
         if (i === 1) cover = await renderRegion(page, null, 520, 0.8).catch(() => null);
-        // A cover that is only a picture is not repeated as a page of the book.
-        if (i === 1 && ex.raw.rasterImageId !== undefined && n > 1) {
-          ex.raw.rasterImageId = undefined;
-        }
         pages.push(ex);
       } finally {
         page.cleanup();
@@ -203,7 +198,7 @@ export async function convertPdf(bytes: Uint8Array, fallbackTitle: string, ctx: 
 
     ctx.progress(0.86, 'Finding chapters');
     const outline = await resolveOutline(pdf, pages);
-    const plan = planChapters(analysis.blocks, outline, title, n);
+    const plan = planChapters(analysis.blocks, outline, title);
 
     // Table-of-contents anchors for sub-entries.
     const anchors = new Map<number, string>();
@@ -232,8 +227,6 @@ export async function convertPdf(bytes: Uint8Array, fallbackTitle: string, ctx: 
       }
       return node;
     });
-    // Avoid duplicate titles that only differ by case/punctuation being nested under themselves.
-    void normTitle;
 
     const epub = await buildEpub({
       title,

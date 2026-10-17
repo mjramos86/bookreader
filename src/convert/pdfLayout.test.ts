@@ -136,6 +136,49 @@ describe('analyze: columns', () => {
   });
 });
 
+describe('analyze: neighbouring columns', () => {
+  it('does not merge lines of one column because a large heading sits beside them', () => {
+    // A 22pt heading in the left column falls between two baselines of the right column.
+    const right = Array.from({ length: 14 }, (_, i) => line({ y: 200 + i * 16.5, x: 320, text: `Right line ${i} runs on and on`, width: 235 }));
+    const left = Array.from({ length: 10 }, (_, i) => line({ y: 300 + i * 16.5, x: 57, text: `Left line ${i} runs on and on`, width: 235 }));
+    const heading = line({ y: 258.7, x: 57, text: 'Chapter 1: Beacon Light', size: 22, bold: true, width: 235 });
+    const { blocks } = analyze([page(0, [...right, ...left, heading])]);
+    const text = blocks.map((b) => b.text).join(' ');
+    expect(text).toContain('Right line 3 runs on and on Right line 4');
+    expect(blocks.some((b) => b.type === 'heading' && b.text.includes('Beacon'))).toBe(true);
+  });
+
+  it('keeps a superscript marker on the line it belongs to', () => {
+    const items = [
+      line({ y: 100, text: 'A sentence with a marker', width: 150 }),
+      { ...line({ y: 96.5, x: 222, text: '1', size: 7 }), width: 4 },
+      line({ y: 100, x: 228, text: ' and the rest of it continues across the line.', width: 300 }),
+      ...bodyLines(130, para(5, 'Filler')),
+    ];
+    const { blocks } = analyze([page(0, items)]);
+    expect(blocks[0].text).toContain('A sentence with a marker');
+    expect(blocks[0].runs.some((r) => r.sup && r.text.includes('1'))).toBe(true);
+  });
+});
+
+describe('analyze: column detection', () => {
+  it('finds columns whose baselines are offset by half a line', () => {
+    const left = Array.from({ length: 16 }, (_, i) => line({ y: 100 + i * 16.5, x: 57, text: `Left sentence ${i} fills this narrow column`, width: 235 }));
+    const right = Array.from({ length: 16 }, (_, i) => line({ y: 108.25 + i * 16.5, x: 320, text: `Right sentence ${i} fills this narrow column`, width: 235 }));
+    const { blocks } = analyze([page(0, [...right, ...left])]);
+    const text = blocks.map((b) => b.text).join(' ');
+    expect(text.indexOf('Left sentence 15')).toBeLessThan(text.indexOf('Right sentence 0'));
+  });
+
+  it('does not treat a short-celled table as two columns of text', () => {
+    const row = (y: number, a: string, b: string) => [line({ y, x: 72, text: a, width: 60 }), line({ y, x: 380, text: b, width: 50 })];
+    const items = Array.from({ length: 12 }, (_, i) => row(100 + i * 16, `Name ${i}`, `${i * 3}`)).flat();
+    const { blocks } = analyze([page(0, items)]);
+    const table = blocks.find((b) => b.type === 'table');
+    expect(table?.rows).toHaveLength(12);
+  });
+});
+
 describe('analyze: headings, lists and code', () => {
   it('ranks heading levels by size', () => {
     const items = [
@@ -251,7 +294,7 @@ describe('planChapters', () => {
 
   it('splits at the top-level headings', () => {
     const { blocks } = analyze(manyHeadings());
-    const plan = planChapters(blocks, [], 'Book', 4);
+    const plan = planChapters(blocks, [], 'Book');
     expect(plan.map((c) => c.title)).toEqual(['Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4']);
     expect(plan.every((c) => c.kind === 'heading')).toBe(true);
   });
@@ -266,7 +309,6 @@ describe('planChapters', () => {
         { title: 'Middle', page: 2, y: 70, depth: 0 },
       ],
       'Book',
-      4,
     );
     expect(plan.map((c) => [c.title, c.kind])).toEqual([
       ['Opening', 'outline'],
@@ -278,7 +320,7 @@ describe('planChapters', () => {
   it('falls back to evenly sized parts when there is no structure', () => {
     const pages = Array.from({ length: 24 }, (_, i) => page(i, bodyLines(100, Array.from({ length: 40 }, (_, j) => `Plain page ${i} line ${j} with enough words to add up to a large amount of text here`))));
     const { blocks } = analyze(pages);
-    const plan = planChapters(blocks, [], 'Plain', 24);
+    const plan = planChapters(blocks, [], 'Plain');
     expect(plan.length).toBeGreaterThan(1);
     expect(plan[0].title).toMatch(/^Part 1 \(pages 1/);
     expect(plan[plan.length - 1].end).toBe(blocks.length);
