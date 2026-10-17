@@ -6,6 +6,7 @@
   "description": "In-browser e-book reader. Converts PDF, DOCX, TXT, Markdown, HTML, FB2 and CBZ into EPUB and reads it with Kindle-style controls.",
   "scripts": {
     "postinstall": "node scripts/copy-pdfjs-assets.mjs",
+    "start": "npm run build && vite preview --open",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",

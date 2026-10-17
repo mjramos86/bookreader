@@ -7,6 +7,20 @@ EPUB and several similar formats can be added directly.
 
 Nothing is uploaded: conversion, storage (IndexedDB) and reading all happen on your device.
 
+## Quick start
+
+**Easiest:** open the hosted version (GitHub Pages, deployed automatically from `main`; see the
+repository's Settings, Pages, Source: GitHub Actions, once). Nothing to install.
+
+**Run it yourself:** install [Node.js](https://nodejs.org) 22 or newer, then in this folder:
+
+```bash
+npm install
+npm start
+```
+
+That builds the app and opens it in your browser.
+
 ## Supported formats
 
 | Format | How it is handled |
