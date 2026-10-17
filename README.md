@@ -62,7 +62,12 @@ npm test           # unit tests (vitest)
 npm run build      # typecheck and production build into dist/
 ```
 
-The build is static and uses relative paths, so `dist/` can be hosted from any folder.
+The build is static and uses relative paths, so `dist/` can be hosted from any folder or sub-path
+(GitHub Pages, Netlify, any web server).
+
+**It must be served over http(s).** Double-clicking `dist/index.html` (a `file://` address) does not
+work, because browsers refuse to run module scripts from disk; the page then shows an explanation
+instead of the app. To try a build locally run `npm run preview` and open the address it prints.
 
 ### Layout
 
