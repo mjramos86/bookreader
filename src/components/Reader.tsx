@@ -77,6 +77,8 @@ export function Reader({ id, settings, updateSettings, onExit }: Props) {
   const [footerMode, setFooterMode] = useState<FooterMode>(loadFooterMode);
   const [drag, setDrag] = useState<number | null>(null);
   const [backVisible, setBackVisible] = useState(false);
+  const debugOn = useMemo(() => new URLSearchParams(location.search).has('debug'), []);
+  const [debugLines, setDebugLines] = useState<string[]>([]);
   const backTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [fullscreen, setFullscreen] = useState(false);
 
@@ -159,6 +161,7 @@ export function Reader({ id, settings, updateSettings, onExit }: Props) {
           onKey: (e) => handleKey.current(e),
           // The toolbar stays until the first page turn, so a first-time reader can always find the controls.
           onPageTurn: () => setChrome(false),
+          onDebug: (line) => setDebugLines((l) => [...l.slice(-14), line]),
           onInteract: () => {
             setShowSettings(false);
             setActiveHighlight(null);
@@ -571,6 +574,10 @@ export function Reader({ id, settings, updateSettings, onExit }: Props) {
       <div className="page-area" style={brightnessStyle}>
         <div className="stage" ref={stageRef} />
         {pageBookmark && <div className="ribbon" aria-hidden="true" />}
+        {/* Always available, in the parent document: a way to get the toolbar back that cannot depend on taps inside the book. */}
+        {!chrome && status === 'ready' && (
+          <button className="chrome-handle" onClick={() => setChrome(true)} aria-label="Show toolbar" />
+        )}
         {settings.layout === 'paged' && status === 'ready' && (
           <>
             <button className="side-nav prev" onClick={() => rendererRef.current?.prev()} aria-label="Previous page">
@@ -749,6 +756,7 @@ export function Reader({ id, settings, updateSettings, onExit }: Props) {
       )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
+      {debugOn && <pre className="debug-log">{debugLines.join('\n') || 'debug: touch the page'}</pre>}
     </div>
   );
 }

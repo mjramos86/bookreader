@@ -63,6 +63,8 @@ export interface RendererHandlers {
   onInteract(): void;
   /** The reader turned a page by tap, key, swipe or button. */
   onPageTurn(): void;
+  /** Optional: receives a line for each input event (the `?debug` panel). */
+  onDebug?(line: string): void;
   onLoading(loading: boolean): void;
   onError(message: string): void;
 }
@@ -136,6 +138,7 @@ export class BookRenderer {
     this.updateScrollerMode();
     this.scroller.addEventListener('scroll', () => this.onScroll(), { passive: true });
     this.scroller.addEventListener('wheel', (e) => this.onWheel(e), { passive: true });
+    this.attachMarginListeners();
     this.resizeObserver = new ResizeObserver(() => {
       const size = `${container.clientWidth}x${container.clientHeight}`;
       if (size === this.lastSize) return;
@@ -465,7 +468,7 @@ body {
   width: ${f.W}px !important; max-width: none !important;
   ${
     paged
-      ? `height: ${f.H}px !important; column-count: ${f.cols}; column-gap: ${f.gap}px; column-fill: auto; will-change: transform;`
+      ? `height: ${f.H}px !important; column-count: ${f.cols}; column-gap: ${f.gap}px; column-fill: auto; position: relative !important; left: 0;`
       : 'height: auto !important;'
   }
 }
@@ -526,12 +529,12 @@ mark.sh { background: rgba(255, 120, 0, .55); color: inherit; border-radius: 2px
   private measure(f: Frame): void {
     const root = f.doc.documentElement;
     if (this.isPaged) {
-      // A translated body shifts its scrollable overflow, so measure with the transform cleared.
+      // A shifted body moves its scrollable overflow, so measure with the offset cleared.
       const body = f.doc.body;
-      const transform = body.style.transform;
-      body.style.transform = 'none';
+      const left = body.style.left;
+      body.style.left = '0px';
       const width = root.scrollWidth;
-      body.style.transform = transform;
+      body.style.left = left;
       f.pageCount = Math.max(1, Math.ceil((width + f.gap - 1) / f.stride));
     } else {
       f.pageCount = 1;
@@ -580,7 +583,7 @@ mark.sh { background: rgba(255, 120, 0, .55); color: inherit; border-radius: 2px
     return lo;
   }
 
-  /** Position of a character relative to the body's untransformed origin. */
+  /** Position of a character relative to the body's own origin (independent of the page offset). */
   private posOf(f: Frame, offset: number): { x: number; y: number } | null {
     if (!f.nodes.length) return null;
     const range = (this.range ??= f.doc.createRange());
@@ -672,7 +675,9 @@ mark.sh { background: rgba(255, 120, 0, .55); color: inherit; border-radius: 2px
 
   private setPage(f: Frame, page: number, preferOffset?: number): void {
     f.page = page;
-    f.doc.body.style.transform = `translate3d(${-page * f.stride}px,0,0)`;
+    // Pages are shown by offsetting the body with layout positioning rather than a CSS transform:
+    // iOS Safari mishandles hit-testing (taps, selection) on transformed, clipped, multi-column content.
+    f.doc.body.style.left = `${-page * f.stride}px`;
     const start = page === 0 ? 0 : this.firstOffsetOnPage(f, page);
     const end = page + 1 >= f.pageCount ? f.total : this.firstOffsetOnPage(f, page + 1);
     f.startOffset = start;
@@ -791,6 +796,14 @@ mark.sh { background: rgba(255, 120, 0, .55); color: inherit; border-radius: 2px
     const doc = f.doc;
     // Taps are detected from pointer events. iOS Safari does not deliver `click` to a plain document
     // (no handler on the tapped element, no pointer cursor), but it does deliver pointer events.
+    const dbg = (name: string, e: Event) => {
+      const t = e.target as Element | null;
+      const p = e as PointerEvent;
+      this.handlers.onDebug?.(`${name} ${Math.round(p.clientX ?? 0)},${Math.round(p.clientY ?? 0)} <${t?.localName ?? '?'}>`);
+    };
+    for (const name of ['pointerdown', 'pointerup', 'pointercancel', 'click', 'touchstart', 'touchend', 'touchcancel']) {
+      doc.addEventListener(name, (e) => dbg(name, e), true);
+    }
     doc.addEventListener('pointerdown', (e) => {
       this.handlers.onInteract();
       this.pointerStart = { x: e.clientX, y: e.clientY, t: Date.now() };
@@ -811,6 +824,36 @@ mark.sh { background: rgba(255, 120, 0, .55); color: inherit; border-radius: 2px
     });
   }
 
+  /**
+   * The text frame is inset from the screen by the page margins, and taps in those margins land on
+   * the scroller behind it, not in the frame. Handle them the same way: that is where thumbs tap.
+   */
+  private attachMarginListeners(): void {
+    const s = this.scroller;
+    s.addEventListener('pointerdown', (e) => {
+      if (e.target !== s) return;
+      this.handlers.onInteract();
+      this.pointerStart = { x: e.clientX, y: e.clientY, t: Date.now() };
+    });
+    s.addEventListener('pointerup', (e) => {
+      const start = this.pointerStart;
+      this.pointerStart = null;
+      const f = this.frame;
+      if (e.target !== s || !start || !f) return;
+      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10 || Date.now() - start.t > 600) return;
+      this.handlers.onDebug?.('margin tap');
+      const box = this.container.getBoundingClientRect();
+      this.onTap(f, null, (e.clientX - box.left) / box.width);
+    });
+    s.addEventListener('touchstart', (e) => {
+      if (e.target === s) this.onTouchStart(e);
+    }, { passive: true });
+    s.addEventListener('touchend', (e) => {
+      const f = this.frame;
+      if (e.target === s && f) this.onTouchEnd(f, e);
+    }, { passive: true });
+  }
+
   private touchStart: { x: number; y: number; t: number } | null = null;
   private pointerStart: { x: number; y: number; t: number } | null = null;
 
@@ -825,7 +868,8 @@ mark.sh { background: rgba(255, 120, 0, .55); color: inherit; border-radius: 2px
     if (!s) return;
     // A tap: short, and the pointer barely moved. Drags (selection, swipes) and long presses are not taps.
     if (Math.hypot(e.clientX - s.x, e.clientY - s.y) > 10 || Date.now() - s.t > 600) return;
-    this.onTap(f, e.target as Element | null, e.clientX);
+    this.handlers.onDebug?.('tap');
+    this.onTap(f, e.target as Element | null, (e.clientX + f.iframe.offsetLeft) / this.container.clientWidth);
   }
 
   private onTouchEnd(f: Frame, e: TouchEvent): void {
@@ -852,7 +896,8 @@ mark.sh { background: rgba(255, 120, 0, .55); color: inherit; border-radius: 2px
     else this.prev();
   }
 
-  private onTap(f: Frame, target: Element | null, clientX: number): void {
+  /** `ratio` is the tap's horizontal position across the whole reading area, 0 (left) to 1 (right). */
+  private onTap(f: Frame, target: Element | null, ratio: number): void {
     const sel = f.doc.getSelection();
     if (sel && !sel.isCollapsed) return;
     const link = target?.closest('a');
@@ -882,9 +927,8 @@ mark.sh { background: rgba(255, 120, 0, .55); color: inherit; border-radius: 2px
       this.handlers.onToggleChrome();
       return;
     }
-    const abs = (clientX + f.iframe.offsetLeft) / this.container.clientWidth;
-    if (abs < 0.28) this.prev();
-    else if (abs > 0.72) this.next();
+    if (ratio < 0.28) this.prev();
+    else if (ratio > 0.72) this.next();
     else this.handlers.onToggleChrome();
   }
 
