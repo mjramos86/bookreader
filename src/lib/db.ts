@@ -1,7 +1,7 @@
 import type { Annotation, BookRecord } from './types';
 
 const DB_NAME = 'bookreader';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -11,10 +11,14 @@ function open(): Promise<IDBDatabase> {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = () => {
         const db = req.result;
-        db.createObjectStore('books', { keyPath: 'id' });
-        db.createObjectStore('files');
-        const ann = db.createObjectStore('annotations', { keyPath: 'id' });
-        ann.createIndex('bookId', 'bookId');
+        // Each store is created only if missing, so upgrading from an older version keeps its data.
+        if (!db.objectStoreNames.contains('books')) db.createObjectStore('books', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+        if (!db.objectStoreNames.contains('annotations')) {
+          const ann = db.createObjectStore('annotations', { keyPath: 'id' });
+          ann.createIndex('bookId', 'bookId');
+        }
+        if (!db.objectStoreNames.contains('drive')) db.createObjectStore('drive', { keyPath: 'fileId' });
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => {
@@ -67,12 +71,15 @@ export async function getBookFile(id: string): Promise<Blob | undefined> {
 
 export async function deleteBook(id: string): Promise<void> {
   const db = await open();
-  const tx = db.transaction(['books', 'files', 'annotations'], 'readwrite');
+  const tx = db.transaction(['books', 'files', 'annotations', 'drive'], 'readwrite');
   tx.objectStore('books').delete(id);
   tx.objectStore('files').delete(id);
   const store = tx.objectStore('annotations');
   const keys = await wrap(store.index('bookId').getAllKeys(id));
   for (const k of keys) store.delete(k);
+  // Forget where the book came from, so syncing the Drive folder brings it back if it is still there.
+  const drive = tx.objectStore('drive');
+  for (const r of await wrap(drive.getAll() as IDBRequest<DriveRecord[]>)) if (r.bookId === id) drive.delete(r.fileId);
   await done(tx);
 }
 
@@ -92,6 +99,26 @@ export async function deleteAnnotation(id: string): Promise<void> {
   const db = await open();
   const tx = db.transaction('annotations', 'readwrite');
   tx.objectStore('annotations').delete(id);
+  await done(tx);
+}
+
+/** What was imported from Google Drive, so a later sync only fetches what is new. */
+export interface DriveRecord {
+  fileId: string;
+  bookId: string;
+  modifiedTime: string;
+  md5Checksum?: string;
+}
+
+export async function listDriveRecords(): Promise<DriveRecord[]> {
+  const db = await open();
+  return wrap(db.transaction('drive').objectStore('drive').getAll());
+}
+
+export async function saveDriveRecord(r: DriveRecord): Promise<void> {
+  const db = await open();
+  const tx = db.transaction('drive', 'readwrite');
+  tx.objectStore('drive').put(r);
   await done(tx);
 }
 

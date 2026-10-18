@@ -36,6 +36,28 @@ That builds the app and opens it in your browser.
 
 MOBI/AZW and other Kindle formats are not supported; convert them to EPUB first (for example with Calibre).
 
+## Building a library from Google Drive
+
+Choose **Google Drive** in the library, paste a folder link, and sign in. Every supported book in that
+folder and its subfolders (and Google Docs, fetched as Word files) is downloaded and converted into your
+library on this device. Run it again any time: only new or changed files are fetched, and a book you
+removed comes back if it is still in the folder. Access is read-only, and the app talks to Google directly
+from your browser; nothing goes through a server.
+
+Google requires every app that reads Drive to have its own (free) OAuth client ID, which has to be created
+under your own Google account. One time:
+
+1. Create a project in the [Google Cloud Console](https://console.cloud.google.com/projectcreate) and
+   [enable the Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com).
+2. APIs & Services, OAuth consent screen: choose External, fill in an app name and your email, and add your
+   own Google account under **Test users** (an unverified app works for up to 100 test users).
+3. Credentials, Create credentials, OAuth client ID, **Web application**. Add your site's address (for
+   example `https://YOUR-NAME.github.io`, no path) under **Authorized JavaScript origins**.
+4. Paste the client ID into the Drive dialog on each device, **or** set it once for everyone: in GitHub,
+   Settings, Secrets and variables, Actions, Variables, add `GOOGLE_CLIENT_ID`, then re-run the deploy.
+
+While the consent screen is in "Testing", Google asks you to sign in again about once a week.
+
 ## Reading features
 
 - Paged layout (one page, or a two-page spread on wide screens) or continuous scroll
