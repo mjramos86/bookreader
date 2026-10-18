@@ -157,6 +157,8 @@ export function Reader({ id, settings, updateSettings, onExit }: Props) {
           onLink: (t) => handleLink.current(t),
           onImage: (src) => setLightbox(src),
           onKey: (e) => handleKey.current(e),
+          // The toolbar stays until the first page turn, so a first-time reader can always find the controls.
+          onPageTurn: () => setChrome(false),
           onInteract: () => {
             setShowSettings(false);
             setActiveHighlight(null);
@@ -172,10 +174,6 @@ export function Reader({ id, settings, updateSettings, onExit }: Props) {
         const loc = record.location;
         await renderer.display(loc ? { spine: loc.spine, offset: loc.offset, fraction: loc.fraction } : { spine: 0, offset: 0 });
         if (cancelled) return;
-        if (!loc) {
-          // Opening for the first time: leave the chrome visible for a moment, then get out of the way.
-          setTimeout(() => !cancelled && setChrome(false), 2600);
-        } else setChrome(false);
 
         await indexBook(book, undefined, () => cancelled);
         if (cancelled) return;
@@ -573,6 +571,16 @@ export function Reader({ id, settings, updateSettings, onExit }: Props) {
       <div className="page-area" style={brightnessStyle}>
         <div className="stage" ref={stageRef} />
         {pageBookmark && <div className="ribbon" aria-hidden="true" />}
+        {settings.layout === 'paged' && status === 'ready' && (
+          <>
+            <button className="side-nav prev" onClick={() => rendererRef.current?.prev()} aria-label="Previous page">
+              <Icon name="back" size={22} />
+            </button>
+            <button className="side-nav next" onClick={() => rendererRef.current?.next()} aria-label="Next page">
+              <span style={{ display: 'inline-flex', transform: 'scaleX(-1)' }}><Icon name="back" size={22} /></span>
+            </button>
+          </>
+        )}
 
         {selection && (
           <div className="popup" style={popupStyle(selection.rect)} role="toolbar" aria-label="Selection actions" onPointerDown={(e) => e.preventDefault()}>

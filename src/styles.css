@@ -166,6 +166,15 @@ a { color: var(--link); }
 .rd-scroller:not(.scroll-mode) .rd-frame { position: absolute; }
 .rd-scroller.scroll-mode .rd-frame { margin: 0 auto; }
 .rd-chapter-nav { display: block; margin: 16px auto; padding: 10px 18px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); }
+.side-nav {
+  position: absolute; z-index: 4; top: 50%; width: 28px; height: 52px; margin-top: -26px; padding: 0; border: 0; border-radius: 10px;
+  display: grid; place-items: center; color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent);
+  opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.side-nav.prev { left: 2px; }
+.side-nav.next { right: 2px; }
+.chrome-on .side-nav { opacity: 0.6; pointer-events: auto; }
+.side-nav:hover { background: color-mix(in srgb, var(--fg) 16%, transparent); }
 .ribbon { position: absolute; top: -2px; right: 34px; width: 22px; height: 34px; background: var(--accent); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%); pointer-events: none; z-index: 3; }
 .spinner {
   position: absolute; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%;
