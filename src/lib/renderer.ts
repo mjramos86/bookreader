@@ -61,6 +61,8 @@ export interface RendererHandlers {
   onImage(src: string): void;
   onKey(e: KeyboardEvent): void;
   onInteract(): void;
+  /** The reader turned a page by tap, key, swipe or button. */
+  onPageTurn(): void;
   onLoading(loading: boolean): void;
   onError(message: string): void;
 }
@@ -197,6 +199,7 @@ export class BookRenderer {
   }
 
   next(): void {
+    this.handlers.onPageTurn();
     this.clearSearchMark();
     const f = this.frame;
     if (!f) return;
@@ -211,6 +214,7 @@ export class BookRenderer {
   }
 
   prev(): void {
+    this.handlers.onPageTurn();
     this.clearSearchMark();
     const f = this.frame;
     if (!f) return;
@@ -453,6 +457,7 @@ html {
   overflow-wrap: break-word;
   text-rendering: optimizeLegibility;
   -webkit-text-size-adjust: 100%;
+  touch-action: ${paged ? 'pan-y pinch-zoom' : 'auto'};
   ${paged ? 'overflow: hidden;' : 'overflow-y: hidden; overflow-x: hidden;'}
 }
 body {
@@ -784,8 +789,18 @@ mark.sh { background: rgba(255, 120, 0, .55); color: inherit; border-radius: 2px
 
   private attachFrameListeners(f: Frame): void {
     const doc = f.doc;
-    doc.addEventListener('click', (e) => this.onClick(f, e));
-    doc.addEventListener('mousedown', () => this.handlers.onInteract());
+    // Taps are detected from pointer events. iOS Safari does not deliver `click` to a plain document
+    // (no handler on the tapped element, no pointer cursor), but it does deliver pointer events.
+    doc.addEventListener('pointerdown', (e) => {
+      this.handlers.onInteract();
+      this.pointerStart = { x: e.clientX, y: e.clientY, t: Date.now() };
+    });
+    doc.addEventListener('pointerup', (e) => this.onPointerUp(f, e));
+    doc.addEventListener('pointercancel', () => (this.pointerStart = null));
+    // Links navigate to "#" by default; we handle them ourselves.
+    doc.addEventListener('click', (e) => {
+      if ((e.target as Element | null)?.closest('a')) e.preventDefault();
+    });
     doc.addEventListener('touchstart', (e) => this.onTouchStart(e), { passive: true });
     doc.addEventListener('touchend', (e) => this.onTouchEnd(f, e), { passive: true });
     doc.addEventListener('keydown', (e) => this.handlers.onKey(e));
@@ -797,12 +812,20 @@ mark.sh { background: rgba(255, 120, 0, .55); color: inherit; border-radius: 2px
   }
 
   private touchStart: { x: number; y: number; t: number } | null = null;
-  private swiped = false;
+  private pointerStart: { x: number; y: number; t: number } | null = null;
 
   private onTouchStart(e: TouchEvent): void {
     const t = e.touches[0];
     this.touchStart = t ? { x: t.clientX, y: t.clientY, t: Date.now() } : null;
-    this.swiped = false;
+  }
+
+  private onPointerUp(f: Frame, e: PointerEvent): void {
+    const s = this.pointerStart;
+    this.pointerStart = null;
+    if (!s) return;
+    // A tap: short, and the pointer barely moved. Drags (selection, swipes) and long presses are not taps.
+    if (Math.hypot(e.clientX - s.x, e.clientY - s.y) > 10 || Date.now() - s.t > 600) return;
+    this.onTap(f, e.target as Element | null, e.clientX);
   }
 
   private onTouchEnd(f: Frame, e: TouchEvent): void {
@@ -815,7 +838,6 @@ mark.sh { background: rgba(255, 120, 0, .55); color: inherit; border-radius: 2px
     const dx = t.clientX - s.x;
     const dy = t.clientY - s.y;
     if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.6 && Date.now() - s.t < 900) {
-      this.swiped = true;
       if (dx < 0) this.next();
       else this.prev();
     }
@@ -830,18 +852,11 @@ mark.sh { background: rgba(255, 120, 0, .55); color: inherit; border-radius: 2px
     else this.prev();
   }
 
-  private onClick(f: Frame, e: MouseEvent): void {
-    this.handlers.onInteract();
-    if (this.swiped) {
-      this.swiped = false;
-      return;
-    }
+  private onTap(f: Frame, target: Element | null, clientX: number): void {
     const sel = f.doc.getSelection();
     if (sel && !sel.isCollapsed) return;
-    const target = e.target as Element | null;
     const link = target?.closest('a');
     if (link) {
-      e.preventDefault();
       const ext = link.getAttribute('data-ext');
       if (ext) this.handlers.onLink({ external: ext });
       else if (link.getAttribute('data-path')) {
@@ -867,7 +882,7 @@ mark.sh { background: rgba(255, 120, 0, .55); color: inherit; border-radius: 2px
       this.handlers.onToggleChrome();
       return;
     }
-    const abs = (e.clientX + f.iframe.offsetLeft) / this.container.clientWidth;
+    const abs = (clientX + f.iframe.offsetLeft) / this.container.clientWidth;
     if (abs < 0.28) this.prev();
     else if (abs > 0.72) this.next();
     else this.handlers.onToggleChrome();
