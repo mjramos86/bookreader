@@ -27,10 +27,49 @@ interface StoredImage {
   blob: Blob;
 }
 
+/** Rejects if `work` has not settled in `ms`. Phones can lose a worker or a canvas without any error. */
+function withTimeout<T>(work: Promise<T>, ms: number, message: string, onTimeout?: () => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      try {
+        onTimeout?.();
+      } catch {
+        /* already gone */
+      }
+      reject(new Error(message));
+    }, ms);
+    work.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
+const EXTRACT_TIMEOUT = 90_000;
+const RENDER_TIMEOUT = 30_000;
+// Mobile Safari kills pages that hold too much canvas memory, so renders stay small.
+const MAX_PIXELS = 4_000_000;
+
+// One canvas for the whole conversion: allocating and dropping hundreds of them is what makes
+// iOS run out of canvas memory part-way through a long book.
+let sharedCanvas: HTMLCanvasElement | null = null;
+
+function releaseCanvas(): void {
+  if (sharedCanvas) sharedCanvas.width = sharedCanvas.height = 0;
+  sharedCanvas = null;
+}
+
 async function canvasToJpeg(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
-  return new Promise((resolve, reject) => {
+  const encode = new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not encode image'))), 'image/jpeg', quality);
   });
+  return withTimeout(encode, RENDER_TIMEOUT, 'Encoding an image took too long');
 }
 
 /** Renders a region of a page (or all of it) to a JPEG. Rect is in page points, top-down. */
@@ -40,16 +79,20 @@ async function renderRegion(page: PDFPageProxy, rect: Rect | null, targetWidth: 
   const w = Math.max(1, r.x1 - r.x0);
   const h = Math.max(1, r.y1 - r.y0);
   let scale = Math.min(3, Math.max(0.5, targetWidth / w));
-  const maxPixels = 14_000_000;
-  if (w * h * scale * scale > maxPixels) scale = Math.sqrt(maxPixels / (w * h));
+  if (w * h * scale * scale > MAX_PIXELS) scale = Math.sqrt(MAX_PIXELS / (w * h));
   const viewport = page.getViewport({ scale, offsetX: -r.x0 * scale, offsetY: -r.y0 * scale });
-  const canvas = document.createElement('canvas');
+  const canvas = (sharedCanvas ??= document.createElement('canvas'));
   canvas.width = Math.max(1, Math.ceil(w * scale));
   canvas.height = Math.max(1, Math.ceil(h * scale));
-  await page.render({ canvas, viewport, background: '#ffffff' }).promise;
-  const blob = await canvasToJpeg(canvas, quality);
-  canvas.width = canvas.height = 0;
-  return blob;
+  const task = page.render({ canvas, viewport, background: '#ffffff' });
+  try {
+    await withTimeout(task.promise, RENDER_TIMEOUT, 'Drawing a figure took too long', () => task.cancel());
+    return await canvasToJpeg(canvas, quality);
+  } catch (err) {
+    // A canvas that failed once is not trusted again.
+    releaseCanvas();
+    throw err;
+  }
 }
 
 async function resolveOutline(pdf: PDFDocumentProxy, pages: ExtractedPage[]): Promise<OutlineEntry[]> {
@@ -87,6 +130,12 @@ async function resolveOutline(pdf: PDFDocumentProxy, pages: ExtractedPage[]): Pr
   return out;
 }
 
+function stalled(page: number, total: number): ImportError {
+  return new ImportError(
+    `Conversion stopped on page ${page} of ${total}: this device ran out of time or memory there. Try again with the page open in the foreground, or split the PDF into smaller parts.`,
+  );
+}
+
 function cleanTitle(t: string | undefined | null): string {
   const s = (t ?? '').replace(/\s+/g, ' ').trim();
   if (!s || /^(untitled|microsoft word - |.*\.(docx?|pdf|tex|indd)$)/i.test(s)) return '';
@@ -105,6 +154,8 @@ export async function convertPdf(bytes: Uint8Array, fallbackTitle: string, ctx: 
       wasmUrl: `${assets}wasm/`,
       iccUrl: `${assets}iccs/`,
       fontExtraProperties: true,
+      // Glyphs are drawn as paths: loading hundreds of embedded fonts through the browser can stall on iOS.
+      disableFontFace: true,
     });
   try {
     pdf = await task.promise;
@@ -127,14 +178,24 @@ export async function convertPdf(bytes: Uint8Array, fallbackTitle: string, ctx: 
     };
     let cover: Blob | null = null;
     let rasterPages = 0;
+    let skippedImages = 0;
     let lang: string | null = null;
 
     for (let i = 1; i <= n; i++) {
       checkAborted(ctx.signal);
       ctx.progress((i / n) * 0.8, `Reading page ${i} of ${n}`);
-      const page = await pdf.getPage(i);
+      // Let the screen update (and the browser breathe) between pages.
+      await new Promise((r) => setTimeout(r, 0));
+      let page: PDFPageProxy;
       try {
-        const ex = await extractPage(pdfjs, page, fontCache);
+        page = await withTimeout(pdf.getPage(i), EXTRACT_TIMEOUT, 'timeout');
+      } catch {
+        throw stalled(i, n);
+      }
+      try {
+        const ex = await withTimeout(extractPage(pdfjs, page, fontCache), EXTRACT_TIMEOUT, 'timeout').catch((err) => {
+          throw err instanceof Error && err.message === 'timeout' ? stalled(i, n) : err;
+        });
         lang ??= ex.lang;
         const { width, height } = ex.raw;
         const pageArea = width * height;
@@ -152,13 +213,23 @@ export async function convertPdf(bytes: Uint8Array, fallbackTitle: string, ctx: 
 
         const scanned = ex.textChars < 20 && (big.length > 0 || ex.paintOps >= 6 || figures.length > 0);
         if (scanned) {
-          ex.raw.rasterImageId = addImage(await renderRegion(page, null, 1100, 0.72));
-          ex.raw.items = [];
-          rasterPages++;
+          ctx.progress((i / n) * 0.8, `Reading page ${i} of ${n} (saving page image)`);
+          try {
+            ex.raw.rasterImageId = addImage(await renderRegion(page, null, 1100, 0.72));
+            ex.raw.items = [];
+            rasterPages++;
+          } catch {
+            skippedImages++;
+          }
         } else if (figures.length) {
+          ctx.progress((i / n) * 0.8, `Reading page ${i} of ${n} (saving figures)`);
           const raw: RawFigure[] = [];
           for (const rect of figures) {
-            raw.push({ ...rect, imageId: addImage(await renderRegion(page, rect, 1000, 0.86)) });
+            try {
+              raw.push({ ...rect, imageId: addImage(await renderRegion(page, rect, 1000, 0.86)) });
+            } catch {
+              skippedImages++;
+            }
           }
           ex.raw.figures = raw;
         }
@@ -170,6 +241,11 @@ export async function convertPdf(bytes: Uint8Array, fallbackTitle: string, ctx: 
       }
     }
 
+    if (skippedImages) {
+      warnings.push(
+        `${skippedImages} figure${skippedImages === 1 ? ' was' : 's were'} left out because this device could not draw ${skippedImages === 1 ? 'it' : 'them'}.`,
+      );
+    }
     if (rasterPages / n > 0.5) {
       warnings.push(
         'This PDF looks scanned: it has no selectable text, so its pages are kept as images and font, size and theme settings will not change them. Run OCR on the PDF first (for example with OCRmyPDF) to get a fully reflowable book.',
@@ -182,7 +258,11 @@ export async function convertPdf(bytes: Uint8Array, fallbackTitle: string, ctx: 
     await new Promise((r) => setTimeout(r, 0));
     const analysis = analyze(pages.map((p) => p.raw));
     if (!analysis.blocks.length) {
-      throw new ImportError('No readable text or images were found in this PDF.');
+      throw new ImportError(
+        skippedImages
+          ? 'This device could not draw the pages of this PDF. Try again after closing other tabs, or on a computer.'
+          : 'No readable text or images were found in this PDF.',
+      );
     }
 
     // Metadata.
@@ -242,6 +322,7 @@ export async function convertPdf(bytes: Uint8Array, fallbackTitle: string, ctx: 
     ctx.progress(1, 'Done');
     return { epub, warnings };
   } finally {
+    releaseCanvas();
     void task.destroy();
   }
 }
