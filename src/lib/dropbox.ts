@@ -36,8 +36,11 @@ const KEY = 'bookreader.dropbox.v1';
 const PENDING = 'bookreader.dropbox.pending';
 export const RETURN_FLAG = 'bookreader.dropbox.return';
 
-/** App key baked in at build time (a public value), used when the user has not entered one. */
-export const BUILT_IN_APP_KEY: string = (import.meta.env.VITE_DROPBOX_APP_KEY as string | undefined) ?? '';
+/**
+ * The Dropbox app key this site uses. An app key identifies the app (it is not a secret and ships to
+ * every browser); the build can override it with VITE_DROPBOX_APP_KEY, e.g. for a fork with its own app.
+ */
+export const BUILT_IN_APP_KEY: string = (import.meta.env.VITE_DROPBOX_APP_KEY as string | undefined) || 'oq3d1hz4zd1ajzj';
 
 export function loadDropbox(): DropboxConnection | null {
   try {
