@@ -1,7 +1,7 @@
 import type { Annotation, BookRecord } from './types';
 
 const DB_NAME = 'bookreader';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -11,10 +11,14 @@ function open(): Promise<IDBDatabase> {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = () => {
         const db = req.result;
-        db.createObjectStore('books', { keyPath: 'id' });
-        db.createObjectStore('files');
-        const ann = db.createObjectStore('annotations', { keyPath: 'id' });
-        ann.createIndex('bookId', 'bookId');
+        // Each store is created only if missing, so upgrading from an older version keeps its data.
+        if (!db.objectStoreNames.contains('books')) db.createObjectStore('books', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+        if (!db.objectStoreNames.contains('annotations')) {
+          const ann = db.createObjectStore('annotations', { keyPath: 'id' });
+          ann.createIndex('bookId', 'bookId');
+        }
+        if (!db.objectStoreNames.contains('cloud')) db.createObjectStore('cloud', { keyPath: 'key' });
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => {
@@ -67,12 +71,15 @@ export async function getBookFile(id: string): Promise<Blob | undefined> {
 
 export async function deleteBook(id: string): Promise<void> {
   const db = await open();
-  const tx = db.transaction(['books', 'files', 'annotations'], 'readwrite');
+  const tx = db.transaction(['books', 'files', 'annotations', 'cloud'], 'readwrite');
   tx.objectStore('books').delete(id);
   tx.objectStore('files').delete(id);
   const store = tx.objectStore('annotations');
   const keys = await wrap(store.index('bookId').getAllKeys(id));
   for (const k of keys) store.delete(k);
+  // Forget where the book came from, so syncing the cloud folder brings it back if it is still there.
+  const cloud = tx.objectStore('cloud');
+  for (const r of await wrap(cloud.getAll() as IDBRequest<SyncRecord[]>)) if (r.bookId === id) cloud.delete(r.key);
   await done(tx);
 }
 
@@ -92,6 +99,28 @@ export async function deleteAnnotation(id: string): Promise<void> {
   const db = await open();
   const tx = db.transaction('annotations', 'readwrite');
   tx.objectStore('annotations').delete(id);
+  await done(tx);
+}
+
+/** What was imported from a cloud folder, so a later sync only fetches what is new. */
+export interface SyncRecord {
+  /** `<service>:<file id>` */
+  key: string;
+  bookId: string;
+  modifiedTime: string;
+  /** The service's content hash, when it has one. */
+  hash?: string;
+}
+
+export async function listSyncRecords(): Promise<SyncRecord[]> {
+  const db = await open();
+  return wrap(db.transaction('cloud').objectStore('cloud').getAll());
+}
+
+export async function saveSyncRecord(r: SyncRecord): Promise<void> {
+  const db = await open();
+  const tx = db.transaction('cloud', 'readwrite');
+  tx.objectStore('cloud').put(r);
   await done(tx);
 }
 
