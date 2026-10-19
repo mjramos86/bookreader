@@ -36,25 +36,37 @@ That builds the app and opens it in your browser.
 
 MOBI/AZW and other Kindle formats are not supported; convert them to EPUB first (for example with Calibre).
 
-## Building a library from Google Drive
+## Building a library from the cloud
 
-Choose **Google Drive** in the library, paste a folder link, and sign in. Every supported book in that
-folder and its subfolders (and Google Docs, fetched as Word files) is downloaded and converted into your
-library on this device. Run it again any time: only new or changed files are fetched, and a book you
-removed comes back if it is still in the folder. Access is read-only, and the app talks to Google directly
-from your browser; nothing goes through a server.
+Choose **Cloud** in the library, pick Dropbox or Google Drive, and sign in. Every supported book in the
+folder and its subfolders is downloaded and converted into your library on this device. Run it again any
+time: only new or changed files are fetched, and a book you removed comes back if it is still in the folder.
+Access is read-only, and the app talks to the service directly from your browser; nothing goes through a server.
 
-Google requires every app that reads Drive to have its own (free) OAuth client ID, which has to be created
-under your own Google account. One time:
+Both services need an app registration of your own (a public "key" you paste into the dialog). The dialog
+shows the steps; in short:
+
+### Dropbox (free, no card; you stay signed in)
+
+1. [Create an app](https://www.dropbox.com/developers/apps/create): Scoped access, **App folder**, any unique name.
+2. Permissions tab: tick `files.metadata.read` and `files.content.read`, press Submit.
+3. Settings tab: under Redirect URIs add your site's address exactly as the dialog shows it (for example
+   `https://YOUR-NAME.github.io/bookreader/`).
+4. Paste the **App key** into the dialog, or set it once for all devices: in GitHub, Settings, Secrets and
+   variables, Actions, Variables, add `DROPBOX_APP_KEY`, then re-run the deploy.
+5. Put books in `Dropbox/Apps/<your app name>` and press Connect.
+
+Sign-in uses OAuth with PKCE and keeps a refresh token in this browser, so it does not ask again.
+
+### Google Drive
 
 1. Create a project in the [Google Cloud Console](https://console.cloud.google.com/projectcreate) and
    [enable the Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com).
-2. APIs & Services, OAuth consent screen: choose External, fill in an app name and your email, and add your
-   own Google account under **Test users** (an unverified app works for up to 100 test users).
-3. Credentials, Create credentials, OAuth client ID, **Web application**. Add your site's address (for
-   example `https://YOUR-NAME.github.io`, no path) under **Authorized JavaScript origins**.
-4. Paste the client ID into the Drive dialog on each device, **or** set it once for everyone: in GitHub,
-   Settings, Secrets and variables, Actions, Variables, add `GOOGLE_CLIENT_ID`, then re-run the deploy.
+   (Google may ask for billing details when you create a project; the OAuth client and Drive API themselves are free.)
+2. OAuth consent screen: External, an app name and your email, and add your own Google account under **Test users**.
+3. Credentials, OAuth client ID, **Web application**; add your site's origin (for example
+   `https://YOUR-NAME.github.io`, no path) under Authorized JavaScript origins.
+4. Paste the client ID into the dialog, or set the `GOOGLE_CLIENT_ID` Actions variable.
 
 While the consent screen is in "Testing", Google asks you to sign in again about once a week.
 

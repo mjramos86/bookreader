@@ -144,6 +144,9 @@ a { color: var(--link); }
 .drive-list li:last-child { border-bottom: 0; }
 .drive-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .drive-list .muted, .drive-list .err { flex: none; max-width: 55%; text-align: right; font-size: 13px; }
+.choice { display: grid; gap: 4px; text-align: left; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.choice:hover { border-color: var(--accent); }
+.choice span { color: var(--muted); font-size: 14px; }
 .drop-overlay { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(4px); pointer-events: none; }
 .drop-box { display: grid; gap: 8px; justify-items: center; padding: 48px 64px; border: 3px dashed var(--accent); border-radius: 24px; color: var(--accent); background: var(--bg); text-align: center; }
 .drop-box span { color: var(--muted); font-size: 13px; }

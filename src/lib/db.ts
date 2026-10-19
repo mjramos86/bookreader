@@ -18,7 +18,7 @@ function open(): Promise<IDBDatabase> {
           const ann = db.createObjectStore('annotations', { keyPath: 'id' });
           ann.createIndex('bookId', 'bookId');
         }
-        if (!db.objectStoreNames.contains('drive')) db.createObjectStore('drive', { keyPath: 'fileId' });
+        if (!db.objectStoreNames.contains('cloud')) db.createObjectStore('cloud', { keyPath: 'key' });
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => {
@@ -71,15 +71,15 @@ export async function getBookFile(id: string): Promise<Blob | undefined> {
 
 export async function deleteBook(id: string): Promise<void> {
   const db = await open();
-  const tx = db.transaction(['books', 'files', 'annotations', 'drive'], 'readwrite');
+  const tx = db.transaction(['books', 'files', 'annotations', 'cloud'], 'readwrite');
   tx.objectStore('books').delete(id);
   tx.objectStore('files').delete(id);
   const store = tx.objectStore('annotations');
   const keys = await wrap(store.index('bookId').getAllKeys(id));
   for (const k of keys) store.delete(k);
-  // Forget where the book came from, so syncing the Drive folder brings it back if it is still there.
-  const drive = tx.objectStore('drive');
-  for (const r of await wrap(drive.getAll() as IDBRequest<DriveRecord[]>)) if (r.bookId === id) drive.delete(r.fileId);
+  // Forget where the book came from, so syncing the cloud folder brings it back if it is still there.
+  const cloud = tx.objectStore('cloud');
+  for (const r of await wrap(cloud.getAll() as IDBRequest<SyncRecord[]>)) if (r.bookId === id) cloud.delete(r.key);
   await done(tx);
 }
 
@@ -102,23 +102,25 @@ export async function deleteAnnotation(id: string): Promise<void> {
   await done(tx);
 }
 
-/** What was imported from Google Drive, so a later sync only fetches what is new. */
-export interface DriveRecord {
-  fileId: string;
+/** What was imported from a cloud folder, so a later sync only fetches what is new. */
+export interface SyncRecord {
+  /** `<service>:<file id>` */
+  key: string;
   bookId: string;
   modifiedTime: string;
-  md5Checksum?: string;
+  /** The service's content hash, when it has one. */
+  hash?: string;
 }
 
-export async function listDriveRecords(): Promise<DriveRecord[]> {
+export async function listSyncRecords(): Promise<SyncRecord[]> {
   const db = await open();
-  return wrap(db.transaction('drive').objectStore('drive').getAll());
+  return wrap(db.transaction('cloud').objectStore('cloud').getAll());
 }
 
-export async function saveDriveRecord(r: DriveRecord): Promise<void> {
+export async function saveSyncRecord(r: SyncRecord): Promise<void> {
   const db = await open();
-  const tx = db.transaction('drive', 'readwrite');
-  tx.objectStore('drive').put(r);
+  const tx = db.transaction('cloud', 'readwrite');
+  tx.objectStore('cloud').put(r);
   await done(tx);
 }
 

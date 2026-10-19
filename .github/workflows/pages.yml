@@ -33,6 +33,8 @@ jobs:
           # Optional repository variable (Settings > Secrets and variables > Actions > Variables).
           # A Google OAuth client ID is public, so it is safe to bake into the site.
           VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          # Likewise for Dropbox (variable DROPBOX_APP_KEY); an app key is public too.
+          VITE_DROPBOX_APP_KEY: ${{ vars.DROPBOX_APP_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

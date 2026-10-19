@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DriveError, downloadFile, isBookName, listBooks, parseFolderId, type DriveFile } from './drive';
-import { planSync } from './driveSync';
+import { DriveError, downloadFile, driveItems, isBookName, listBooks, parseFolderId, type DriveFile } from './drive';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -109,23 +108,11 @@ describe('downloadFile', () => {
   });
 });
 
-describe('planSync', () => {
-  const f = (id: string, extra: Partial<DriveFile> = {}): DriveFile => ({ id, name: `${id}.epub`, mimeType: 'x', modifiedTime: 't1', path: '', ...extra });
-
-  it('only fetches new or changed files', () => {
-    const files = [f('a'), f('b'), f('c', { md5Checksum: 'new' }), f('d', { modifiedTime: 't2' })];
-    const records = [
-      { fileId: 'a', bookId: '1', modifiedTime: 't1' },
-      { fileId: 'c', bookId: '2', modifiedTime: 't1', md5Checksum: 'old' },
-      { fileId: 'd', bookId: '3', modifiedTime: 't1' },
-    ];
-    const { fresh, known } = planSync(files, records);
-    expect(fresh.map((x) => x.id)).toEqual(['b', 'c', 'd']);
-    expect(known).toBe(1);
-  });
-
-  it('treats a matching checksum as unchanged even if the modified time moved', () => {
-    const { fresh } = planSync([f('a', { md5Checksum: 'same', modifiedTime: 't9' })], [{ fileId: 'a', bookId: '1', modifiedTime: 't1', md5Checksum: 'same' }]);
-    expect(fresh).toHaveLength(0);
+describe('driveItems', () => {
+  it('maps Drive files to service-independent items with a namespaced key', () => {
+    const files: DriveFile[] = [{ id: 'abc', name: 'a.epub', mimeType: 'x', modifiedTime: 't', path: 'Sub/', md5Checksum: 'h', size: 5 }];
+    const [item] = driveItems(files, 'tok');
+    expect(item).toMatchObject({ key: 'gdrive:abc', name: 'a.epub', path: 'Sub/', hash: 'h', size: 5, modifiedTime: 't' });
+    expect(typeof item.download).toBe('function');
   });
 });

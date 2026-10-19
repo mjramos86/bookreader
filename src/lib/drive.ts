@@ -5,6 +5,8 @@
  * read-only access; files are listed and downloaded through the Drive REST API. Nothing is sent to
  * any server of ours: the app talks to Google directly from the browser.
  */
+import type { CloudItem } from './cloudSync';
+import { readWithProgress } from './net';
 import { extOf } from './util';
 
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
@@ -151,6 +153,19 @@ export async function listBooks(
   return { folderName: root.name, files, ignored };
 }
 
+/** Adapts Drive files to the service-independent form used by the sync engine. */
+export function driveItems(files: DriveFile[], token: string): CloudItem[] {
+  return files.map((f) => ({
+    key: `gdrive:${f.id}`,
+    name: f.name,
+    path: f.path,
+    size: f.size,
+    modifiedTime: f.modifiedTime,
+    hash: f.md5Checksum,
+    download: (opts) => downloadFile(f, token, opts),
+  }));
+}
+
 /** Downloads a file (Google Docs are exported as .docx), reporting progress as it streams. */
 export async function downloadFile(
   file: DriveFile,
@@ -164,19 +179,7 @@ export async function downloadFile(
       : `${API}/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=true`;
   const res = await fetchFn(url, { headers: { Authorization: `Bearer ${token}` }, signal: opts.signal });
   if (!res.ok) throw await toError(res);
-  const total = Number(res.headers.get('content-length')) || file.size || 0;
-  if (!res.body || !opts.onProgress || !total) return res.blob();
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let received = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    received += value.length;
-    opts.onProgress(Math.min(1, received / total));
-  }
-  return new Blob(chunks as BlobPart[]);
+  return readWithProgress(res, file.size, opts.onProgress);
 }
 
 // ---------------------------------------------------------------------------------------------

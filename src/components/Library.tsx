@@ -6,7 +6,9 @@ import type { Settings } from '../lib/settings';
 import type { BookRecord } from '../lib/types';
 import { useImporter } from '../lib/useImporter';
 import { Icon } from './Icon';
+import { RETURN_FLAG } from '../lib/dropbox';
 import { DriveDialog } from './DriveDialog';
+import { DropboxDialog } from './DropboxDialog';
 import { ImportQueue } from './ImportQueue';
 
 type Sort = 'recent' | 'added' | 'title' | 'author' | 'progress';
@@ -91,7 +93,14 @@ export function Library({ settings, updateSettings, onOpen }: Props) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<Sort>('recent');
   const [dragging, setDragging] = useState(false);
-  const [driveOpen, setDriveOpen] = useState(false);
+  // After Dropbox's sign-in redirect the page loads fresh: reopen the Dropbox dialog to show the result.
+  const [cloud, setCloud] = useState<null | 'choose' | 'dropbox' | 'drive'>(() => {
+    try {
+      return sessionStorage.getItem(RETURN_FLAG) ? 'dropbox' : null;
+    } catch {
+      return null;
+    }
+  });
   const fileInput = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
 
@@ -214,8 +223,8 @@ export function Library({ settings, updateSettings, onOpen }: Props) {
           <button className="icon-btn" onClick={() => updateSettings({ theme: dark ? 'light' : 'dark' })} aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'} title="Toggle theme">
             <Icon name={dark ? 'sun' : 'moon'} />
           </button>
-          <button className="btn" onClick={() => setDriveOpen(true)} title="Build your library from a Google Drive folder">
-            <Icon name="cloud" size={18} /> <span className="hide-narrow">Google Drive</span>
+          <button className="btn" onClick={() => setCloud('choose')} title="Build your library from a Dropbox or Google Drive folder">
+            <Icon name="cloud" size={18} /> <span className="hide-narrow">Cloud</span>
           </button>
           <button className="btn primary" onClick={() => fileInput.current?.click()}>
             <Icon name="plus" size={18} /> Add books
@@ -235,8 +244,8 @@ export function Library({ settings, updateSettings, onOpen }: Props) {
             <button className="btn primary large" onClick={() => fileInput.current?.click()}>
               <Icon name="plus" size={20} /> Choose books
             </button>{' '}
-            <button className="btn large" onClick={() => setDriveOpen(true)}>
-              <Icon name="cloud" size={20} /> From Google Drive
+            <button className="btn large" onClick={() => setCloud('choose')}>
+              <Icon name="cloud" size={20} /> From the cloud
             </button>
             <p className="formats">EPUB · PDF · DOCX · TXT · Markdown · HTML · FB2 · CBZ</p>
             <p className="privacy">Everything stays in your browser. Nothing is uploaded.</p>
@@ -271,7 +280,26 @@ export function Library({ settings, updateSettings, onOpen }: Props) {
         )}
       </main>
 
-      {driveOpen && <DriveDialog onClose={() => setDriveOpen(false)} onImported={() => void refresh()} />}
+      {cloud === 'choose' && (
+        <div className="modal-backdrop" onClick={() => setCloud(null)}>
+          <div className="modal drive" role="dialog" aria-label="Choose a cloud service" onClick={(e) => e.stopPropagation()}>
+            <div className="drive-head">
+              <h2>Build a library from the cloud</h2>
+              <button className="icon-btn" onClick={() => setCloud(null)} aria-label="Close"><Icon name="close" /></button>
+            </div>
+            <button className="choice" onClick={() => setCloud('dropbox')}>
+              <strong>Dropbox</strong>
+              <span>Free to set up, no card needed. You stay signed in, and an app folder keeps things simple.</span>
+            </button>
+            <button className="choice" onClick={() => setCloud('drive')}>
+              <strong>Google Drive</strong>
+              <span>Needs a Google Cloud project for the sign-in; Google may ask for billing details when you create one.</span>
+            </button>
+          </div>
+        </div>
+      )}
+      {cloud === 'dropbox' && <DropboxDialog onClose={() => setCloud(null)} onImported={() => void refresh()} />}
+      {cloud === 'drive' && <DriveDialog onClose={() => setCloud(null)} onImported={() => void refresh()} />}
 
       <ImportQueue jobs={importer.jobs} onCancel={importer.cancel} onDismiss={importer.dismiss} onClear={importer.clearFinished} onOpen={onOpen} />
 
